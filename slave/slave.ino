@@ -60,7 +60,7 @@ uint8_t led_state=LOW;
 
 void setup()
 {
-  Serial.begin(9600);
+  //Serial.begin(9600);
   
   Serial.println("initializing Wire interface ...");
   Wire.begin();
@@ -90,46 +90,77 @@ void setup()
 
 int usAddresses[2] = {SRF02_I2C_ADDRESS_1, SRF02_I2C_ADDRESS_2};
 int usModes[2] = {REAL_RANGING_MODE_CMS, REAL_RANGING_MODE_CMS};
-int usDelays[2] = {70, 70};
-int usStates[2] = {1, 1};
+int usDelays[2] = {1000, 1000};
+int usStates[2] = {0, 0};
 int usLastShot[2] = {0, 0};
 int message[32];
 int iM = 0;
 
-
-void loop()
-{
-  //Envío I2C
-  
-  //Falta comprobar que el delay se cumpla
+void shootUS(){
+  readUS();
   for(int i = 0; i<2; i++){
-    byte high_byte_range;
-    byte low_byte_range;
-    byte high_min;
-    byte low_min;
     if(usStates[i] == 1 && ((millis()-usLastShot[i])>usDelays[i])){
       Serial.println("dentro del if");
       write_command(usAddresses[i], usModes[i]);
       usLastShot[i] = millis();
       usStates[i] = 0;
-      
-      Serial.println("Enviando 8");
-      /*
-      int result = 8;
-      Serial1.write(result);
-      Serial.println("Saliendo if");
-      */
     }
     if(usStates[i] == 2 && ((millis()-usLastShot[i])>usDelays[i])){
       write_command(usAddresses[i], usModes[i]);
       usLastShot[i] = millis();
     }
   }
+}
+void readUS(){
+  for(int i = 0; i<2; i++){
+    byte high_byte_range;
+    byte low_byte_range;
+    byte high_min;
+    byte low_min;
+    if(usStates[i] == 1 && ((millis()-usLastShot[i])>usDelays[i])){
+      high_byte_range=read_register(SRF02_I2C_ADDRESS_1,RANGE_HIGH_BYTE);
+      low_byte_range=read_register(SRF02_I2C_ADDRESS_1,RANGE_LOW_BYTE);
+      high_min=read_register(SRF02_I2C_ADDRESS_1,AUTOTUNE_MINIMUM_HIGH_BYTE);
+      low_min=read_register(SRF02_I2C_ADDRESS_1,AUTOTUNE_MINIMUM_LOW_BYTE);
+
+      int result = int((high_byte_range<<8) | low_byte_range);
+      Serial.print("Wao incrediballs: ");
+      Serial.println(result);
+      Serial1.write(0x03);
+      Serial1.write(usAddresses[i]<<1);
+      Serial1.write(usModes[i]);
+      Serial1.write(result);
+      Serial.println("Saliendo if");
+      
+    }
+    if(usStates[i] == 2 && ((millis()-usLastShot[i])>usDelays[i])){
+
+
+      int result = int((high_byte_range<<8) | low_byte_range);
+      Serial.print("Wao incredipelotas: ");
+      Serial.println(result);
+      Serial1.write(0x03);
+      Serial1.write(usAddresses[i]<<1);
+      Serial1.write(usModes[i]);
+      Serial1.write(result);
+      Serial.println("Saliendo if");
+    }
+  }
+}
+int x = 256;
+void loop()
+{
+  Serial.println(byte(x));
+
+  Serial.println(byte(x>>8));
+  //Envío I2C
+  //Falta comprobar que el delay se cumpla
+  shootUS();
 
   //Incluir delay de mínimo 70 ms
 
   //Comunicación Serial1
-  /*
+  
   uint32_t last_ms=millis();
   while(millis()-last_ms<pseudo_period_ms) 
   { 
@@ -156,10 +187,8 @@ void loop()
         Serial.println("A mimir");
         readMessage();
         break;
-      }
-      if(data == 0x12){
-        Serial.println("One shot");
-      }
+      }*/
+      
       Serial.print(data);
       break;
     }
@@ -172,68 +201,100 @@ void loop()
   Serial.println("*******************************************************"); 
 
   digitalWrite(LED_BUILTIN,led_state); led_state=(led_state+1)&0x01;
-  */
+  
 }
-void readMessage(){
+int readMessage(){
   Serial.println("hello your computer has virus");
   for(int i = 0; i<iM;i++){
     Serial.println(message[i]);
   }
   if(message[0] == 0x12){
+    Serial.println("Juancho");
     activateUS(message[1], 1);
   }
+  if(message[0] == 0x23){
+    if(message[2] < 70) return 201;
+    Serial.println("Tucho");
+    activateUS(message[1], 2);
+    setDelay(message[1], message[2]);
+  }
+  if(message[0] == 0x15){
+    Serial.println("hinche");
+    setModeUS(message[1], REAL_RANGING_MODE_INCHES);
+  }
+  if(message[0] == 0x16){
+    Serial.println("sentimitre");
+    setModeUS(message[1], REAL_RANGING_MODE_CMS);
+    
+  }
+  if(message[0] == 0x17){
+    Serial.println("tempo");
+    setModeUS(message[1], REAL_RANGING_MODE_USECS);
+  }
+  return 0;
 }
+
 int activateUS(int us, int state){
   Serial.println("activando ultrasonido");
-  int index = 0;
   for(int i = 0; i < 2; i++){
-    if(us == usAddresses[i]){
-      index = i;
-      break;
+    if(us == usAddresses[i]<<1){
+      Serial.print("us con indice: ");
+      Serial.println(i);
+      usStates[i] = state;
+      return 0;
     }
   }
-  usStates[index] = state;
-  return 0;
+  return 1;
 }
 
-int changeDelay(int us, int delay){
-  usDelays[us] = delay;
-  return 0;
+int setModeUS(int us, int mode){
+  Serial.println("Entrando en cambio de modo");
+  for(int i = 0; i < 2; i++){
+    if(us == usAddresses[i]<<1){
+      Serial.print("us con indice: ");
+      Serial.println(i);
+      usModes[i] = mode;
+      return 0;
+    }
+  }
+  return 1;
 }
 
-void intToStr(int N, char *str) {
-    int i = 0;
-  
-    // Save the copy of the number for sign
-    int sign = N;
-
-    // If the number is negative, make it positive
-    if (N < 0)
-        N = -N;
-
-    // Extract digits from the number and add them to the
-    // string
-    while (N > 0) {
-      
-        // Convert integer digit to character and store
-      	// it in the str
-        str[i++] = N % 10 + '0';
-      	N /= 10;
-    } 
-
-    // If the number was negative, add a minus sign to the
-    // string
-    if (sign < 0) {
-        str[i++] = '-';
+int setDelay(int us, int delay){
+  Serial.println("Entrando en cambio de delay");
+  for(int i = 0; i < 2; i++){
+    if(us == usAddresses[i]<<1){
+      Serial.print("us con indice: ");
+      Serial.println(i);
+      usDelays[i] = delay;
+      return 0;
     }
+  }
+  return 1;
+}
 
-    // Null-terminate the string
-    str[i] = '\0';
-
-    // Reverse the string to get the correct order
-    for (int j = 0, k = i - 1; j < k; j++, k--) {
-        char temp = str[j];
-        str[j] = str[k];
-        str[k] = temp;
+int sendStatus(int us){
+  for(int i = 0; i < 2; i++){
+    if(us == usAddresses[i]<<1){
+      int bytesDelay = 1;
+      int delay = usModes[i];
+      while(delay > 255){
+        delay = delay >> 8;
+        bytesDelay++;
+      }
+      delay = usModes[i];
+      Serial1.write(0xF4 + bytesDelay);
+      Serial1.write(usAddresses[i]);
+      //Forma de escribir byte a byte un entero desde parte menos significativa a más significativa
+      //Ej al enviar 256 = 00000001 00000000 llegará 0 y luego 1
+      while(delay > 255){
+        Serial1.write(delay);
+        delay = delay >> 8;
+      }
+      Serial1.write(usModes[i]);
+      Serial1.write(usStates[i]);
+      return 0;
     }
+  }
+  return 1;
 }
