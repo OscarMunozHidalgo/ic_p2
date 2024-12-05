@@ -30,6 +30,15 @@
 #define ADDRESS_CHANGE_3RD_SEQUENCE byte(165)
 #define ADDRESS_CHANGE_2ND_SEQUENCE byte(170)
 
+#define ONE_SHOT 0x11
+#define ON 0x20
+#define OFF 0x31
+#define UNIT_INC 0x41
+#define UNIT_CM 0x51
+#define UNIT_MS 0x61
+#define DELAY 0x70
+#define STATUS 0x81
+#define US 0x90
 
 inline void write_command(byte address,byte command)
 { 
@@ -97,15 +106,14 @@ int message[32];
 int iM = 0;
 
 void shootUS(){
-  readUS();
   for(int i = 0; i<2; i++){
-    if(usStates[i] == 1 && ((millis()-usLastShot[i])>usDelays[i])){
-      Serial.println("dentro del if");
+    readUS();
+    if(usStates[i] == 1 && ((millis()-usLastShot[i])>usDelays[i]))  {
       write_command(usAddresses[i], usModes[i]);
       usLastShot[i] = millis();
-      usStates[i] = 0;
     }
     if(usStates[i] == 2 && ((millis()-usLastShot[i])>usDelays[i])){
+      Serial.println("lanzando us");
       write_command(usAddresses[i], usModes[i]);
       usLastShot[i] = millis();
     }
@@ -117,7 +125,7 @@ void readUS(){
     byte low_byte_range;
     byte high_min;
     byte low_min;
-    if(usStates[i] == 1 && ((millis()-usLastShot[i])>usDelays[i])){
+    if(usStates[i] == 1 && ((millis()-usLastShot[i])>=70)){
       high_byte_range=read_register(SRF02_I2C_ADDRESS_1,RANGE_HIGH_BYTE);
       low_byte_range=read_register(SRF02_I2C_ADDRESS_1,RANGE_LOW_BYTE);
       high_min=read_register(SRF02_I2C_ADDRESS_1,AUTOTUNE_MINIMUM_HIGH_BYTE);
@@ -126,20 +134,22 @@ void readUS(){
       int result = int((high_byte_range<<8) | low_byte_range);
       Serial.print("Wao incrediballs: ");
       Serial.println(result);
-      Serial1.write(0x03);
+      Serial1.write(0xF3);
       Serial1.write(usAddresses[i]<<1);
+      Serial1.write(1);
       Serial1.write(usModes[i]);
       Serial1.write(result);
       Serial.println("Saliendo if");
+      usStates[i] = 0;
       
     }
-    if(usStates[i] == 2 && ((millis()-usLastShot[i])>usDelays[i])){
+    if(usStates[i] == 2 && ((millis()-usLastShot[i])>70)){
 
 
       int result = int((high_byte_range<<8) | low_byte_range);
       Serial.print("Wao incredipelotas: ");
       Serial.println(result);
-      Serial1.write(0x03);
+      Serial1.write(0xF3);
       Serial1.write(usAddresses[i]<<1);
       Serial1.write(usModes[i]);
       Serial1.write(result);
@@ -148,11 +158,14 @@ void readUS(){
   }
 }
 int x = 256;
+
+bool connected = false;
+int numOfMessages = 0;
 void loop()
 {
-  Serial.println(byte(x));
+  //Serial.println(byte(x));
 
-  Serial.println(byte(x>>8));
+  //Serial.println(byte(x>>8));
   //Envío I2C
   //Falta comprobar que el delay se cumpla
   shootUS();
@@ -162,75 +175,95 @@ void loop()
   //Comunicación Serial1
   
   uint32_t last_ms=millis();
-  while(millis()-last_ms<pseudo_period_ms) 
-  { 
+  //while(millis()-last_ms<pseudo_period_ms) 
+  //{ 
     //Serial1.write(15);
     if(Serial1.available()>0) 
     {
       uint8_t data=Serial1.read();
-      if(data == HANDSHAKE) {
+      Serial.println(data);
+
+      if(data == HANDSHAKE && connected == false) {
         Serial.println("Handshake recibido"); Serial.println("enviando ACK");
         Serial1.write(ACK);
+        connected = true;
         iM = 0;
-        break;
+        //break;
       }
-      if(iM < 32){
-        message[iM] = data;
-        iM++;
+      else if (connected){
+        if(iM == 0){
+          Serial.print("me llega: "); Serial.println(data);
+          numOfMessages = (data & 0x0F)+1;
+          Serial.print("num de msg: "); Serial.println(numOfMessages);
+          message[iM] = data;
+          iM++;
+        }
+        else if(iM < numOfMessages-1){
+          message[iM] = data;
+          iM++;
+        }
+        else if(iM == (numOfMessages-1)) {
+          Serial.println("A mimir");
+          message[iM] = data;
+          iM = 0;
+          readMessage();
+          //break;
+        }
       }
-      if(data == BYE) {
-        Serial.println("A mimir");
-        readMessage();
-        break;
-      }
-      /*if(data%2 != 0 && iM >1) {
-        Serial.println("A mimir");
-        readMessage();
-        break;
-      }*/
       
-      Serial.print(data);
-      break;
+      //break;
     }
     
-  }
+  //}
 
-  if(millis()-last_ms<pseudo_period_ms) delay(pseudo_period_ms-(millis()-last_ms));
-  else Serial.println("<-- received: TIMEOUT!!"); 
+  //if(millis()-last_ms<pseudo_period_ms) delay(pseudo_period_ms-(millis()-last_ms));
+  //else Serial.println("<-- received: TIMEOUT!!"); 
 
-  Serial.println("*******************************************************"); 
+  //Serial.println("*******************************************************"); 
 
-  digitalWrite(LED_BUILTIN,led_state); led_state=(led_state+1)&0x01;
+  //digitalWrite(LED_BUILTIN,led_state); led_state=(led_state+1)&0x01;
   
 }
 int readMessage(){
   Serial.println("hello your computer has virus");
-  for(int i = 0; i<iM;i++){
+  for(int i = 0; i<numOfMessages;i++){
     Serial.println(message[i]);
   }
-  if(message[0] == 0x12){
+  Serial.println(message[0]>>4);
+  if(message[0]>>4 == ONE_SHOT>>4){
     Serial.println("Juancho");
     activateUS(message[1], 1);
   }
-  if(message[0] == 0x23){
-    if(message[2] < 70) return 201;
+  if(message[0]>>4 == ON>>4){
+
+    int period = 0;
+    for(int i = 2; i<numOfMessages; i++){
+      period = period<<8;
+      period = period | message[i];
+    }
+    if(period < 70) return 201;
     Serial.println("Tucho");
     activateUS(message[1], 2);
-    setDelay(message[1], message[2]);
+    setDelay(message[1], period);
   }
-  if(message[0] == 0x15){
+  if(message[0]>>4 == UNIT_INC>>4){
     Serial.println("hinche");
     setModeUS(message[1], REAL_RANGING_MODE_INCHES);
   }
-  if(message[0] == 0x16){
+  if(message[0]>>4 == UNIT_CM>>4){
     Serial.println("sentimitre");
     setModeUS(message[1], REAL_RANGING_MODE_CMS);
     
   }
-  if(message[0] == 0x17){
+  if(message[0]>>4 == UNIT_MS>>4){
     Serial.println("tempo");
     setModeUS(message[1], REAL_RANGING_MODE_USECS);
   }
+  if(message[0]>>4 == OFF>>4){
+    Serial.println("apagao");
+    activateUS(message[1], 0);
+  }
+  iM = 0;
   return 0;
 }
 
@@ -298,3 +331,12 @@ int sendStatus(int us){
   }
   return 1;
 }
+
+/*void shutDown(){
+  usModes = {REAL_RANGING_MODE_CMS, REAL_RANGING_MODE_CMS};
+  usDelays = {1000, 1000};
+  usStates = {0, 0};
+  usLastShot = {0, 0};
+
+  Serial.println("restarting device, allmogrote ");
+}*/
