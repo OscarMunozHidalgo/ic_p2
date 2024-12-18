@@ -87,7 +87,7 @@ void setup()
   Serial.println("initializing Wire interface ...");
   Wire.begin();
   //CUIDADO
-  //Wire.setClock(400000L);
+  Wire.setClock(400000L);
 
   #if RST_PIN >= 0
     oled.begin(&Adafruit128x64, OLED_I2C_ADDRESS, RST_PIN);
@@ -135,19 +135,20 @@ bool messageInProgress = false;
 bool oled_on = false;
 int oledMode = 0;
 String lastCommandExecuted = "Ejecuta un comando";
-
+int lastOn = 0;
 void loop()
 {
-  if(millis()%1000 == 0){
+  if(millis()-lastOn > 1000){
     oled.clear();
     if(oled_on){
+      lastOn = millis();
       if(connected){
         oled.println("Connection: ON");
       } else {
         oled.println("Connection: OFF");
       }
       for (int i = 0; i<2; i++){
-        oled.print("US ");oled.print(usAddresses[i]*2);oled.print(": ");
+        oled.print("US ");oled.print(String(usAddresses[i]*2, HEX));oled.print(": ");
         if(usStates[i] != 0){
           oled.print(usLastResult[i]);
           if(usModes[i] == REAL_RANGING_MODE_CMS) oled.println("cm");
@@ -221,10 +222,6 @@ void loop()
 }
 int readMessage(){
 
-  for(int i = 0; i<numOfMessages;i++){
-    Serial.println(message[i]);
-  }
-
   bool usIndexFound = false;
   bool usIndex = 0;
   if (numOfMessages>1){
@@ -238,9 +235,9 @@ int readMessage(){
   if((!usIndexFound) && numOfMessages > 1){ iM = 0; Serial.println("No se ha encontrado el dispositivo solicitado"); return 0x01;}
   
   if(message[0]>>4 == ONE_SHOT>>4){
-    Serial.print("Activando One Shot del dispositivo: "); Serial.println(usAddresses[usIndex]);
+    Serial.print("Activando One Shot del dispositivo: "); Serial.println(usAddresses[usIndex]<<1);
     activateUS(usIndex, 1);
-    String command = "us " + String(usAddresses[usIndex]*2) + "\none shot";
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + "\none shot";
     restartMessage(command);
     return 0;
   }
@@ -254,40 +251,40 @@ int readMessage(){
     }
     if(period <= 70 || period <usMinimumDelays[usIndex]) {iM = 0; Serial.println("0x02 Periodo incorrecto");messageInProgress = false; return 0x02;}
 
-    Serial.print("Activando el dispositivo: "); Serial.print(usAddresses[usIndex]);
+    Serial.print("Activando el dispositivo: "); Serial.print(usAddresses[usIndex]<<1, HEX);
     Serial.print("| con periodo: ");
     Serial.println(period);
     activateUS(usIndex, 2);
     setDelay(usIndex, period);
-    String command = "us " + String(usAddresses[usIndex]*2) + "\non " + String(period);
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + "\non " + String(period);
     restartMessage(command);
     return 0;
   }
   if(message[0]>>4 == UNIT_INC>>4){
     Serial.print("Dispositivo: "); Serial.print(usAddresses[usIndex]); Serial.println(" en modo inches");
     setModeUS(usIndex, REAL_RANGING_MODE_INCHES);
-    String command = "us " + String(usAddresses[usIndex]*2) + " inc";
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + " inc";
     restartMessage(command);
     return 0;
   }
   if(message[0]>>4 == UNIT_CM>>4){
     Serial.print("Dispositivo: "); Serial.print(usAddresses[usIndex]*2); Serial.println(" en modo cm");
     setModeUS(usIndex, REAL_RANGING_MODE_CMS);
-    String command = "us " + String(usAddresses[usIndex]*2) + " cm";
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + " cm";
     restartMessage(command);
     return 0;
   }
   if(message[0]>>4 == UNIT_MS>>4){
     Serial.print("Dispositivo: "); Serial.print(usAddresses[usIndex]); Serial.println(" en modo ms");
     setModeUS(usIndex, REAL_RANGING_MODE_USECS);
-    String command = "us " + String(usAddresses[usIndex]*2)+ " ms";
+    String command = "us " + String(usAddresses[usIndex]*2, HEX)+ " ms";
     restartMessage(command);
     return 0;
   }
   if(message[0]>>4 == OFF>>4){
-    Serial.print("Apagando dispositivo: "); Serial.println(usAddresses[usIndex]);
+    Serial.print("Apagando dispositivo: "); Serial.println(usAddresses[usIndex]<<1);
     activateUS(usIndex, 0);
-    String command = "us " + String(usAddresses[usIndex]*2) + " off";
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + " off";
     restartMessage(command);
     return 0;
   }
@@ -302,7 +299,7 @@ int readMessage(){
     Serial.println("ms");
 
     if(setMinimumDelay(usIndex,period)){Serial.println("Periodo establecido incorrecto");return 0x02;}
-    String command = "us " + String(usAddresses[usIndex]*2) + "\ndelay " + String(period);
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + "\ndelay " + String(period);
     restartMessage(command);
     return 0;
   }
@@ -311,7 +308,7 @@ int readMessage(){
     Serial.print("Enviando estado del dispositivo: "); Serial.println(usAddresses[usIndex]);
     sendStatus(usIndex);
 
-    String command = "status " + String(usAddresses[usIndex]*2);
+    String command = "us " + String(usAddresses[usIndex]*2, HEX) + " status";
     restartMessage(command);
     return 0;
   }
@@ -400,7 +397,7 @@ int sendStatus(int us){
     bytesDelay++;
   }
   delay = usMinimumDelays[us];
-  Serial1.write(0xF4 + bytesDelay);
+  Serial1.write(0xE4 + bytesDelay);
   Serial1.write(usAddresses[us]<<1);
   
   //Forma de escribir byte a byte un entero desde parte menos significativa a más significativa
@@ -418,9 +415,10 @@ int sendStatus(int us){
 }
 
 int sendUS(){
-  Serial1.write(0xF2);
-  Serial1.write(usAddresses[0]);
-  Serial1.write(usAddresses[1]);
+  Serial1.write(0xD3);
+  Serial1.write(usAddresses[0]<<1);
+  Serial1.write(usAddresses[1]<<1);
+  Serial.println(usAddresses[1]);
 }
 
 void shootUS(){
@@ -441,7 +439,7 @@ void readUS(int us){
   
   int result = int((high_byte_range<<8) | low_byte_range);
   usLastResult[us] = result;
-  Serial.print(usAddresses[us]);
+  Serial.print(usAddresses[us]<<1);
   Serial.print(" medida: ");
   Serial.println(result);
   int bytesResult = 1;
